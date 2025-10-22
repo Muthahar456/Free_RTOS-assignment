@@ -14,7 +14,7 @@ It contains two tasks:
 ## How to Run
 1. Open [https://wokwi.com](https://wokwi.com).
 2. Create a new project → Select **ESP32 (Arduino)**.
-3. Paste the code from `FreeRTOS_Assignment.ino`.
+3. Paste the code from `FreeRTOS_Code.ino`.
 4. Run simulation and open Serial Monitor to view the output.
 ## Wokwi Stimulated link 
 https://wokwi.com/projects/445530441868050433
