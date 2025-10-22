@@ -1,0 +1,173 @@
+// --------------------------------------------------------------
+// Problem Statement 1: FreeRTOS Task and Queue Demonstration
+// Platform: ESP32 (Arduino Framework, simulated in Wokwi)
+// Description:
+//   This code demonstrates two FreeRTOS tasks (ExampleTask1 and ExampleTask2)
+//   communicating via a queue. Task1 periodically sends data, while Task2
+//   receives and processes it based on defined conditions.
+// --------------------------------------------------------------
+
+#include <Arduino.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+
+// --------------------------------------------------------------
+// Structure Definition
+// --------------------------------------------------------------
+// Define a structure Data_t that holds two 8-bit members:
+//   - dataID: identifies the data type or command
+//   - dataValue: holds associated data or a parameter
+// --------------------------------------------------------------
+typedef struct {
+  uint8_t dataID;
+  uint8_t dataValue;
+} Data_t;
+
+// --------------------------------------------------------------
+// Global Variables
+// --------------------------------------------------------------
+// These are global variables whose values can be changed elsewhere
+// (for simulation or testing) to affect task behavior.
+// --------------------------------------------------------------
+uint8_t G_DataID = 1;     // Simulated ID value (updated externally)
+uint8_t G_DataValue = 0;  // Simulated data value (updated externally)
+
+// Queue handle for communication between tasks
+QueueHandle_t Queue1;
+
+// --------------------------------------------------------------
+// Task Handles
+// --------------------------------------------------------------
+TaskHandle_t TaskHandle_1;  // Handle for ExampleTask1
+TaskHandle_t TaskHandle_2;  // Handle for ExampleTask2
+
+// --------------------------------------------------------------
+// Function Prototypes
+// --------------------------------------------------------------
+void ExampleTask1(void *pvParameters);
+void ExampleTask2(void *pvParameters);
+
+// --------------------------------------------------------------
+// setup() - Arduino Initialization Function
+// --------------------------------------------------------------
+// Called once at startup to initialize Serial communication,
+// create the queue, and start both FreeRTOS tasks.
+// --------------------------------------------------------------
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("=== ESP32 FreeRTOS Assignment Start ===");
+
+  // Create a queue capable of holding 5 elements of type Data_t
+  Queue1 = xQueueCreate(5, sizeof(Data_t));
+
+  // Check if queue was created successfully
+  if (Queue1 == NULL) {
+    Serial.println("Queue creation failed! System halted.");
+    while (1); // Stop execution if queue fails
+  }
+
+  // Create Task1 (Sender) with priority 1
+  xTaskCreate(ExampleTask1, "Task1", 2048, NULL, 1, &TaskHandle_1);
+
+  // Create Task2 (Receiver) with higher priority 2
+  xTaskCreate(ExampleTask2, "Task2", 2048, NULL, 2, &TaskHandle_2);
+}
+
+// --------------------------------------------------------------
+// loop() - Empty
+// --------------------------------------------------------------
+// Not used in FreeRTOS-based programs because tasks take over control.
+// --------------------------------------------------------------
+void loop() {
+  // Empty loop — tasks are running under FreeRTOS scheduler
+}
+
+// --------------------------------------------------------------
+// ExampleTask1
+// --------------------------------------------------------------
+// Functionality:
+//   - Runs periodically every 500ms.
+//   - Reads global variables G_DataID and G_DataValue.
+//   - Sends these values into the queue (Queue1) as a structure.
+//   - Ensures accurate timing using vTaskDelayUntil().
+// --------------------------------------------------------------
+void ExampleTask1(void *pvParameters) {
+  Data_t sendData;
+  TickType_t xLastWakeTime = xTaskGetTickCount(); // For precise periodic delay
+
+  for (;;) {
+    // Load global values into structure
+    sendData.dataID = G_DataID;
+    sendData.dataValue = G_DataValue;
+
+    // Send structure to the queue (blocks until successful)
+    xQueueSend(Queue1, &sendData, portMAX_DELAY);
+
+    // Print debug message to serial monitor
+    Serial.printf("[Task1] Sent -> ID:%d, Value:%d\n", sendData.dataID, sendData.dataValue);
+
+    // Delay exactly 500 ms between each send
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+  }
+}
+
+// --------------------------------------------------------------
+// ExampleTask2
+// --------------------------------------------------------------
+// Functionality:
+//   - Continuously waits for data from Queue1.
+//   - When data is received, applies logic based on assignment rules:
+//       if (dataID == 0): Delete ExampleTask2
+//       if (dataID == 1): Process dataValue
+//         - dataValue == 0: Increase priority by +2
+//         - dataValue == 1: Restore original priority
+//         - dataValue == 2: Delete ExampleTask2
+//   - Prints the current action on the serial monitor for verification.
+// --------------------------------------------------------------
+void ExampleTask2(void *pvParameters) {
+  Data_t recvData;
+  UBaseType_t originalPriority = uxTaskPriorityGet(NULL); // Store current priority
+  UBaseType_t increasedPriority = originalPriority + 2;   // Priority to increase by +2
+  bool priorityIncreased = false; // Track whether priority has been increased
+
+  for (;;) {
+    // Wait indefinitely for data from the queue
+    if (xQueueReceive(Queue1, &recvData, portMAX_DELAY) == pdPASS) {
+
+      // Print received data
+      Serial.printf("[Task2] Received -> ID:%d, Value:%d\n", recvData.dataID, recvData.dataValue);
+
+      // ---- Logic Handling ----
+      if (recvData.dataID == 0) {
+        Serial.println("Condition: dataID == 0 -> Deleting ExampleTask2");
+        vTaskDelete(NULL); // Delete itself (Task2)
+      }
+
+      else if (recvData.dataID == 1) {
+        Serial.println("Condition: dataID == 1 -> Processing dataValue");
+
+        // If dataValue == 0 → Increase task priority by 2
+        if (recvData.dataValue == 0 && !priorityIncreased) {
+          vTaskPrioritySet(NULL, increasedPriority);
+          priorityIncreased = true;
+          Serial.println("DataValue == 0 -> Priority increased by 2");
+        }
+
+        // If dataValue == 1 → Restore original priority
+        else if (recvData.dataValue == 1 && priorityIncreased) {
+          vTaskPrioritySet(NULL, originalPriority);
+          priorityIncreased = false;
+          Serial.println("DataValue == 1 -> Priority restored to original");
+        }
+
+        // If dataValue == 2 → Delete this task
+        else if (recvData.dataValue == 2) {
+          Serial.println("DataValue == 2 -> Deleting ExampleTask2");
+          vTaskDelete(NULL);
+        }
+      }
+    }
+  }
+}
